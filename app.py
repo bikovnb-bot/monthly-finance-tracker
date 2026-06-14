@@ -23,22 +23,16 @@ st.set_page_config(
     }
 )
 
-# CSS для современного вида
 st.markdown("""
 <style>
-    :root {
-        --primary: #e67e22;
-        --primary-light: #f39c12;
-        --gray-bg: #f8fafc;
-        --card-shadow: 0 8px 20px rgba(0,0,0,0.05);
-    }
     .metric-card {
         background: white;
         border-radius: 20px;
         padding: 1rem;
-        box-shadow: var(--card-shadow);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.05);
         transition: transform 0.2s;
-        border-left: 4px solid var(--primary);
+        border-left: 4px solid #e67e22;
+        margin-bottom: 0;
     }
     .metric-card:hover {
         transform: translateY(-3px);
@@ -52,7 +46,7 @@ st.markdown("""
     }
     .stButton button {
         border-radius: 40px !important;
-        background: var(--primary) !important;
+        background: #e67e22 !important;
         color: white !important;
         font-weight: 500;
         transition: all 0.2s;
@@ -60,26 +54,6 @@ st.markdown("""
     .stButton button:hover {
         background: #d35400 !important;
         transform: scale(1.02);
-    }
-    .css-1d391kg {
-        background: #ffffff;
-        border-right: 1px solid #eef2ff;
-    }
-    .stRadio > div {
-        gap: 8px;
-    }
-    .stRadio label {
-        background: #f1f5f9;
-        padding: 8px 16px;
-        border-radius: 40px;
-        transition: all 0.2s;
-    }
-    .stRadio label:hover {
-        background: #e2e8f0;
-    }
-    .stRadio [data-baseweb="radio"]:checked + div {
-        background: var(--primary);
-        color: white;
     }
     @media (max-width: 768px) {
         .stColumns {
@@ -91,6 +65,16 @@ st.markdown("""
         .stDataFrame {
             font-size: 12px;
         }
+        .stPlotlyChart {
+            margin-bottom: 1rem;
+        }
+        .plotly .modebar {
+            transform: scale(0.8);
+            transform-origin: top right;
+        }
+    }
+    section[data-testid="stSidebar"] {
+        background-color: #fef9f0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -217,20 +201,19 @@ def main():
     init_db()
     st.title("💰 Мои финансы")
 
-    menu = ["Дашборд", "Редактирование месяцев", "Бюджет"]
-    choice = st.sidebar.radio("Меню", menu, format_func=lambda x: {
-        "Дашборд": "📊 Дашборд",
-        "Редактирование месяцев": "✏️ Редактирование месяцев",
-        "Бюджет": "💰 Бюджет расходов"
-    }[x])
+    # Меню с переименованными пунктами
+    menu_option = st.sidebar.radio(
+        "Меню",
+        ["📊 Дашборд", "📝 Ввод данных", "💰 Бюджет"]
+    )
 
     df = load_all_data()
     budgets_df = load_budgets()
 
-    if choice == "Дашборд":
+    if menu_option == "📊 Дашборд":
         st.header("📊 Аналитика")
         if df.empty:
-            st.info("Нет данных. Добавьте месяцы в разделе 'Редактирование месяцев'.")
+            st.info("Нет данных. Добавьте месяцы в разделе 'Ввод данных'.")
             return
 
         selected_year = sidebar_filters(df)
@@ -275,7 +258,6 @@ def main():
             if not current_row.empty:
                 current_month_allowed = current_row['allowed_per_day'].iloc[0]
 
-        # Адаптивные метрики (оставляем видимыми)
         col1, col2 = st.columns(2, gap="medium")
         with col1:
             st.markdown(f"""
@@ -301,18 +283,17 @@ def main():
             <div class="metric-card">
                 <div style="font-size: 0.85rem; color: #64748b;">💸 Можно тратить в день (текущий месяц)</div>
                 <div style="font-size: 1.8rem; font-weight: 700; color: #e67e22;">{current_month_allowed:,.2f} ₽</div>
-                <div style="font-size: 0.7rem; color: #94a3b8;">с учётом оставшихся дней</div>
             </div>
             """, unsafe_allow_html=True)
 
         st.subheader("📋 Контроль бюджета расходов по месяцам")
-        display = merged[['month_name', 'budget', 'expense', 'budget_left', 'days_left', 'allowed_per_day']].copy()
+        display = merged[['month_name', 'income', 'expense', 'balance', 'budget_left', 'allowed_per_day']].copy()
         display = display.rename(columns={
             'month_name': 'Месяц',
-            'budget': 'Бюджет (₽)',
-            'expense': 'Потрачено (₽)',
+            'income': 'Доход (₽)',
+            'expense': 'Расход (₽)',
+            'balance': 'Баланс (₽)',
             'budget_left': 'Остаток бюджета (₽)',
-            'days_left': 'Осталось дней',
             'allowed_per_day': 'Можно тратить в день (₽)'
         })
 
@@ -322,16 +303,15 @@ def main():
             return ''
 
         styled = display.style.format({
-            'Бюджет (₽)': '{:,.2f}',
-            'Потрачено (₽)': '{:,.2f}',
+            'Доход (₽)': '{:,.2f}',
+            'Расход (₽)': '{:,.2f}',
+            'Баланс (₽)': '{:,.2f}',
             'Остаток бюджета (₽)': '{:,.2f}',
             'Можно тратить в день (₽)': '{:,.2f}'
         }).map(color_negative, subset=['Остаток бюджета (₽)'])
 
         st.dataframe(styled, use_container_width=True)
 
-        # Все графики оборачиваем в st.expander (свёрнуты по умолчанию)
-        # 1. Динамика доходов и расходов
         with st.expander("📈 Динамика доходов и расходов (факт)"):
             fig_main = go.Figure()
             fig_main.add_trace(go.Scatter(x=months_ru, y=df_year['income'], mode='lines+markers', name='Доход',
@@ -345,11 +325,11 @@ def main():
                 hovermode='x unified',
                 template='plotly_white',
                 margin=dict(l=20, r=20, t=20, b=20),
-                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                height=300
             )
-            st.plotly_chart(fig_main, use_container_width=True)
+            st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'responsive': True})
 
-        # 2. Бюджет vs факт
         with st.expander("📊 Бюджет расходов vs факт"):
             fig_budget = go.Figure()
             fig_budget.add_trace(go.Bar(x=months_ru, y=merged['expense'], name='Факт', marker_color='#e74c3c'))
@@ -360,11 +340,11 @@ def main():
                 yaxis_title="Сумма (₽)",
                 barmode='group',
                 template='plotly_white',
-                margin=dict(l=20, r=20, t=20, b=20)
+                margin=dict(l=20, r=20, t=20, b=20),
+                height=300
             )
-            st.plotly_chart(fig_budget, use_container_width=True)
+            st.plotly_chart(fig_budget, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'responsive': True})
 
-        # 3. Средние ежедневные расходы
         with st.expander("📉 Средние ежедневные расходы по месяцам"):
             avg_line = df_year['avg_daily_expense'].mean()
             fig_avg = go.Figure()
@@ -379,11 +359,11 @@ def main():
                 xaxis_title="Месяц",
                 yaxis_title="Сумма (₽)",
                 template='plotly_white',
-                margin=dict(l=20, r=20, t=20, b=20)
+                margin=dict(l=20, r=20, t=20, b=20),
+                height=300
             )
-            st.plotly_chart(fig_avg, use_container_width=True)
+            st.plotly_chart(fig_avg, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'responsive': True})
 
-        # 4. Круговая диаграмма
         with st.expander("🥧 Соотношение доходов и расходов"):
             fig_pie = go.Figure(data=[go.Pie(
                 labels=['Доходы', 'Расходы'],
@@ -396,18 +376,24 @@ def main():
             fig_pie.update_layout(
                 title=None,
                 annotations=[dict(text=f'Баланс: {total_balance:,.0f} ₽', x=0.5, y=0.5, font_size=14, showarrow=False)],
-                template='plotly_white'
+                template='plotly_white',
+                margin=dict(l=10, r=10, t=30, b=30),
+                height=300
             )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, use_container_width=True, config={'displayModeBar': True, 'responsive': True})
 
-    elif choice == "Редактирование месяцев":
-        st.header("✏️ Управление месячными записями")
+    elif menu_option == "📝 Ввод данных":
+        st.header("📝 Ввод данных по месяцам")
         available_years = list(range(2020, date.today().year + 5))
+        current_year = date.today().year
+        current_month = date.today().month
+
         col1, col2 = st.columns(2)
         with col1:
-            edit_year = st.selectbox("Год", available_years, index=available_years.index(date.today().year))
+            edit_year = st.selectbox("Год", available_years, index=available_years.index(current_year))
         with col2:
-            edit_month = st.selectbox("Месяц", list(range(1, 13)), format_func=lambda m: MONTHS_RU[m])
+            edit_month = st.selectbox("Месяц", list(range(1, 13)), format_func=lambda m: MONTHS_RU[m],
+                                      index=current_month-1)  # список от 1 до 12, индекс на 1 меньше
 
         existing = get_month_data(edit_year, edit_month)
         if existing:
@@ -444,14 +430,18 @@ def main():
                 columns={'expense': 'Расход (₽)', 'income': 'Доход (₽)', 'days': 'Дней учтено'}
             ).style.format({'Расход (₽)': '{:,.2f}', 'Доход (₽)': '{:,.2f}'}), use_container_width=True)
 
-    elif choice == "Бюджет":
+    elif menu_option == "💰 Бюджет":
         st.header("💰 Установка бюджета расходов на месяц")
         available_years = list(range(2020, date.today().year + 5))
+        current_year = date.today().year
+        current_month = date.today().month
+
         col1, col2 = st.columns(2)
         with col1:
-            plan_year = st.selectbox("Год", available_years, index=available_years.index(date.today().year), key="budget_year")
+            plan_year = st.selectbox("Год", available_years, index=available_years.index(current_year), key="budget_year")
         with col2:
-            plan_month = st.selectbox("Месяц", list(range(1, 13)), format_func=lambda m: MONTHS_RU[m], key="budget_month")
+            plan_month = st.selectbox("Месяц", list(range(1, 13)), format_func=lambda m: MONTHS_RU[m], key="budget_month",
+                                      index=current_month-1)
 
         existing_budget = load_budgets(plan_year, plan_month)
         current_budget = existing_budget.iloc[0]['budget'] if not existing_budget.empty else 0.0
