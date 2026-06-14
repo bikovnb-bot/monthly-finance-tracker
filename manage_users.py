@@ -1,7 +1,3 @@
-# app.py
-# Исправлена кнопка "Выйти" – теперь выход происходит корректно
-# Используется st.query_params для принудительного сброса сессии
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -12,24 +8,11 @@ import hashlib
 import re
 from streamlit_cookies_manager import EncryptedCookieManager
 
-def format_currency(value):
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return "0,00"
-    try:
-        parts = f"{value:,.2f}".split('.')
-        integer_part = parts[0].replace(',', ' ')
-        decimal_part = parts[1] if len(parts) > 1 else '00'
-        return f"{integer_part},{decimal_part}"
-    except:
-        return "0,00"
-
-def styler_format_currency(value):
-    return format_currency(value) + " ₽"
-
-def color_negative(val):
-    if isinstance(val, (int, float)) and val < 0:
-        return 'color: red; font-weight: bold'
-    return ''
+MONTHS_RU = {
+    1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+    5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+    9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
+}
 
 st.set_page_config(
     page_title="Мои финансы",
@@ -42,12 +25,6 @@ st.set_page_config(
         'About': None
     }
 )
-
-MONTHS_RU = {
-    1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
-    5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
-    9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
-}
 
 st.markdown("""
 <style>
@@ -70,10 +47,6 @@ st.markdown("""
         border-radius: 16px;
         overflow-x: auto;
     }
-    .stDataFrame th, .stDataFrame td {
-        padding: 6px 8px !important;
-        font-size: 12px !important;
-    }
     .stButton button {
         border-radius: 40px !important;
         background: #e67e22 !important;
@@ -93,10 +66,7 @@ st.markdown("""
             margin-bottom: 1rem;
         }
         .stDataFrame {
-            font-size: 11px;
-        }
-        .stDataFrame th, .stDataFrame td {
-            padding: 4px 6px !important;
+            font-size: 12px;
         }
         .stPlotlyChart {
             margin-bottom: 1rem;
@@ -136,6 +106,9 @@ st.markdown("""
         text-align: center;
         border-bottom: 2px solid rgba(230,126,34,0.2);
     }
+    .login-logo {
+        margin-bottom: 0.2rem;
+    }
     .login-logo span {
         font-size: 35px !important;
     }
@@ -156,14 +129,23 @@ st.markdown("""
     .login-body {
         padding: 0.8rem 0.8rem 0.6rem;
     }
+    .stTextInput > div {
+        margin-bottom: 0.6rem;
+    }
     .stTextInput > div > div > input {
+        width: 100%;
         padding: 0.4rem 0.6rem !important;
         font-size: 0.75rem !important;
         border-radius: 20px !important;
     }
     .stForm button {
+        width: 100%;
         padding: 0.35rem !important;
         font-size: 0.75rem !important;
+        border-radius: 40px !important;
+        background: #e67e22 !important;
+        color: white !important;
+        margin-top: 0.2rem;
     }
     .forgot-password {
         margin-top: 0.5rem;
@@ -176,6 +158,7 @@ st.markdown("""
     }
     .forgot-password a:hover {
         color: #e67e22;
+        text-decoration: underline;
     }
     .register-link {
         text-align: center;
@@ -188,20 +171,30 @@ st.markdown("""
     }
     .login-footer {
         text-align: center;
-        padding: 0.5rem;
+        padding: 0.5rem 0.5rem;
         border-top: 1px solid #eef2ff;
         font-size: 0.55rem;
         color: #94a3b8;
     }
+    @media (max-width: 576px) {
+        .login-card {
+            margin: 0.5rem;
+        }
+        .login-header {
+            padding: 0.6rem 0.6rem 0.3rem;
+        }
+        .login-body {
+            padding: 0.6rem;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
-try:
-    cookie_password = st.secrets["COOKIE_PASSWORD"]
-except:
-    import os
-    cookie_password = os.environ.get("COOKIE_PASSWORD", "insecure_fallback_do_not_use_in_production")
-cookies = EncryptedCookieManager(prefix="finance_app/", password=cookie_password)
+# -------------------- COOKIES ДЛЯ ЗАПОМИНАНИЯ --------------------
+# Инициализация менеджера cookies (требует секретный ключ)
+# Для простоты используем EncryptedCookieManager с пустым паролем (небезопасно, но для локального использования OK)
+# Лучше задать пароль через secrets или переменную окружения
+cookies = EncryptedCookieManager(prefix="finance_app/", password="some_secret_key_change_me")
 if not cookies.ready():
     st.stop()
 
@@ -249,10 +242,10 @@ def init_db():
     conn.commit()
     conn.close()
 
-def hash_password(password: str) -> str:
+def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def verify_password(username: str, password: str) -> bool:
+def verify_password(username, password):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
@@ -262,7 +255,7 @@ def verify_password(username: str, password: str) -> bool:
         return True
     return False
 
-def register_user(username: str, password: str):
+def register_user(username, password):
     if not re.match(r'^[a-zA-Z0-9_]{3,20}$', username):
         return False, "Логин должен содержать 3-20 символов (буквы, цифры, подчёркивание)"
     if len(password) < 4:
@@ -303,7 +296,10 @@ def load_budgets(year=None, month=None):
         return pd.DataFrame(columns=['year', 'month', 'budget'])
     df['year'] = df['year'].astype(int)
     df['month'] = df['month'].astype(int)
-    df['budget'] = df['budget'].fillna(0).astype(float)
+    if 'budget' not in df.columns:
+        df['budget'] = 0.0
+    else:
+        df['budget'] = df['budget'].fillna(0).astype(float)
     return df
 
 def save_budget(year, month, budget):
@@ -376,14 +372,21 @@ def show_dashboard(df, budgets_df):
     merged['total_days_in_month'] = merged.apply(lambda r: get_actual_days(r['year'], r['month']), axis=1)
 
     today = date.today()
-    current_year, current_month, current_day = today.year, today.month, today.day
+    current_year = today.year
+    current_month = today.month
+    current_day = today.day
 
     def compute_days_left(row):
-        if row['year'] == current_year and row['month'] == current_month:
-            left = row['total_days_in_month'] - current_day + 1
+        year = row['year']
+        month = row['month']
+        total_days = row['total_days_in_month']
+        if year == current_year and month == current_month:
+            left = total_days - current_day + 1
             return max(0, left)
         else:
-            return max(0, row['total_days_in_month'] - row['days'])
+            days_spent = row['days']
+            left = total_days - days_spent
+            return max(0, left)
 
     merged['days_left'] = merged.apply(compute_days_left, axis=1)
     merged['budget_left'] = merged['budget'] - merged['expense']
@@ -407,26 +410,26 @@ def show_dashboard(df, budgets_df):
         st.markdown(f"""
         <div class="metric-card">
             <div style="font-size: 0.85rem; color: #64748b;">💰 Доходы за год</div>
-            <div style="font-size: 1.8rem; font-weight: 700; color: #2ecc71;">{format_currency(total_income)} ₽</div>
+            <div style="font-size: 1.8rem; font-weight: 700; color: #2ecc71;">{total_income:,.2f} ₽</div>
         </div>
         """, unsafe_allow_html=True)
         st.markdown(f"""
         <div class="metric-card">
             <div style="font-size: 0.85rem; color: #64748b;">💸 Расходы за год</div>
-            <div style="font-size: 1.8rem; font-weight: 700; color: #e74c3c;">{format_currency(total_expense)} ₽</div>
+            <div style="font-size: 1.8rem; font-weight: 700; color: #e74c3c;">{total_expense:,.2f} ₽</div>
         </div>
         """, unsafe_allow_html=True)
     with col2:
         st.markdown(f"""
         <div class="metric-card">
             <div style="font-size: 0.85rem; color: #64748b;">⚖️ Баланс</div>
-            <div style="font-size: 1.8rem; font-weight: 700; color: #3498db;">{format_currency(total_balance)} ₽</div>
+            <div style="font-size: 1.8rem; font-weight: 700; color: #3498db;">{total_balance:,.2f} ₽</div>
         </div>
         """, unsafe_allow_html=True)
         st.markdown(f"""
         <div class="metric-card">
             <div style="font-size: 0.85rem; color: #64748b;">💸 Можно тратить в день (текущий месяц)</div>
-            <div style="font-size: 1.8rem; font-weight: 700; color: #e67e22;">{format_currency(current_month_allowed)} ₽</div>
+            <div style="font-size: 1.8rem; font-weight: 700; color: #e67e22;">{current_month_allowed:,.2f} ₽</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -440,9 +443,14 @@ def show_dashboard(df, budgets_df):
         'budget_left': 'Остаток бюджета (₽)',
         'allowed_per_day': 'Можно тратить в день (₽)'
     })
-    styled = display.style.format(styler_format_currency, subset=['Доход (₽)', 'Расход (₽)', 'Баланс (₽)', 'Остаток бюджета (₽)', 'Можно тратить в день (₽)'])
-    styled = styled.map(color_negative, subset=['Остаток бюджета (₽)'])
-    st.dataframe(styled, hide_index=True, width='stretch')
+    col_config = {
+        "Доход (₽)": st.column_config.NumberColumn(format="%.2f ₽"),
+        "Расход (₽)": st.column_config.NumberColumn(format="%.2f ₽"),
+        "Баланс (₽)": st.column_config.NumberColumn(format="%.2f ₽"),
+        "Остаток бюджета (₽)": st.column_config.NumberColumn(format="%.2f ₽"),
+        "Можно тратить в день (₽)": st.column_config.NumberColumn(format="%.2f ₽"),
+    }
+    st.dataframe(display, column_config=col_config, hide_index=True, use_container_width=True)
 
     with st.expander("📈 Динамика доходов и расходов (факт)"):
         fig_main = go.Figure()
@@ -460,7 +468,7 @@ def show_dashboard(df, budgets_df):
             legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
             height=300
         )
-        st.plotly_chart(fig_main, width='stretch', config={'displayModeBar': True, 'scrollZoom': True, 'responsive': True})
+        st.plotly_chart(fig_main, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'responsive': True})
 
     with st.expander("📊 Бюджет расходов vs факт"):
         fig_budget = go.Figure()
@@ -475,7 +483,7 @@ def show_dashboard(df, budgets_df):
             margin=dict(l=20, r=20, t=20, b=20),
             height=300
         )
-        st.plotly_chart(fig_budget, width='stretch', config={'displayModeBar': True, 'scrollZoom': True, 'responsive': True})
+        st.plotly_chart(fig_budget, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'responsive': True})
 
     with st.expander("📉 Средние ежедневные расходы по месяцам"):
         avg_line = df_year['avg_daily_expense'].mean()
@@ -494,7 +502,7 @@ def show_dashboard(df, budgets_df):
             margin=dict(l=20, r=20, t=20, b=20),
             height=300
         )
-        st.plotly_chart(fig_avg, width='stretch', config={'displayModeBar': True, 'scrollZoom': True, 'responsive': True})
+        st.plotly_chart(fig_avg, use_container_width=True, config={'displayModeBar': True, 'scrollZoom': True, 'responsive': True})
 
     with st.expander("🥧 Соотношение доходов и расходов"):
         fig_pie = go.Figure(data=[go.Pie(
@@ -507,12 +515,12 @@ def show_dashboard(df, budgets_df):
         )])
         fig_pie.update_layout(
             title=None,
-            annotations=[dict(text=f'Баланс: {format_currency(total_balance)} ₽', x=0.5, y=0.5, font_size=14, showarrow=False)],
+            annotations=[dict(text=f'Баланс: {total_balance:,.0f} ₽', x=0.5, y=0.5, font_size=14, showarrow=False)],
             template='plotly_white',
             margin=dict(l=10, r=10, t=30, b=30),
             height=300
         )
-        st.plotly_chart(fig_pie, width='stretch', config={'displayModeBar': True, 'responsive': True})
+        st.plotly_chart(fig_pie, use_container_width=True, config={'displayModeBar': True, 'responsive': True})
 
 def show_input_data(df):
     st.header("📝 Ввод данных по месяцам")
@@ -529,7 +537,7 @@ def show_input_data(df):
 
     existing = get_month_data(edit_year, edit_month)
     if existing:
-        st.info(f"Текущие данные за {MONTHS_RU[int(edit_month)]} {edit_year}: расход = {format_currency(existing['expense'])} ₽, доход = {format_currency(existing['income'])} ₽, дней = {existing['days']}")
+        st.info(f"Текущие данные за {MONTHS_RU[int(edit_month)]} {edit_year}: расход = {existing['expense']:.2f} ₽, доход = {existing['income']:.2f} ₽, дней = {existing['days']}")
     else:
         st.info(f"Нет данных за {MONTHS_RU[int(edit_month)]} {edit_year}. Будет создана новая запись.")
 
@@ -561,8 +569,11 @@ def show_input_data(df):
         display_df = all_months[['Месяц', 'expense', 'income', 'days']].rename(
             columns={'expense': 'Расход (₽)', 'income': 'Доход (₽)', 'days': 'Дней учтено'}
         )
-        styled = display_df.style.format(styler_format_currency, subset=['Расход (₽)', 'Доход (₽)'])
-        st.dataframe(styled, hide_index=True, width='stretch')
+        col_config = {
+            "Расход (₽)": st.column_config.NumberColumn(format="%.2f ₽"),
+            "Доход (₽)": st.column_config.NumberColumn(format="%.2f ₽"),
+        }
+        st.dataframe(display_df, column_config=col_config, hide_index=True, use_container_width=True)
 
 def show_budget(budgets_df):
     st.header("💰 Установка бюджета расходов на месяц")
@@ -585,7 +596,7 @@ def show_budget(budgets_df):
         submitted = st.form_submit_button("💾 Сохранить бюджет")
         if submitted:
             save_budget(plan_year, plan_month, new_budget)
-            st.success(f"Бюджет на {MONTHS_RU[plan_month]} {plan_year} установлен: {format_currency(new_budget)} ₽")
+            st.success(f"Бюджет на {MONTHS_RU[plan_month]} {plan_year} установлен: {new_budget:,.2f} ₽")
             st.rerun()
 
     st.subheader("📋 Сводка бюджетов по месяцам")
@@ -594,9 +605,11 @@ def show_budget(budgets_df):
     else:
         budgets_display = budgets_df.copy()
         budgets_display['Месяц'] = budgets_display.apply(lambda row: f"{MONTHS_RU[int(row['month'])]} {int(row['year'])}", axis=1)
-        budgets_display = budgets_display[['Месяц', 'budget']].rename(columns={'budget': 'Бюджет расходов (₽)'})
-        styled = budgets_display.style.format(styler_format_currency, subset=['Бюджет расходов (₽)'])
-        st.dataframe(styled, hide_index=True, width='stretch')
+        display_df = budgets_display[['Месяц', 'budget']].rename(columns={'budget': 'Бюджет расходов (₽)'})
+        col_config = {
+            "Бюджет расходов (₽)": st.column_config.NumberColumn(format="%.2f ₽"),
+        }
+        st.dataframe(display_df, column_config=col_config, hide_index=True, use_container_width=True)
 
 def auth_ui():
     st.markdown("""
@@ -650,21 +663,14 @@ def auth_ui():
 def main():
     init_db()
 
-    # Обработка выхода через параметр URL
-    if 'logout' in st.query_params:
-        st.session_state['authenticated'] = False
-        if "username" in cookies:
-            del cookies["username"]
-            cookies.save()
-        st.query_params.clear()
-        st.rerun()
-
+    # Попытка восстановить сессию из cookies
     if 'authenticated' not in st.session_state:
         st.session_state['authenticated'] = False
 
     if not st.session_state['authenticated']:
         if "username" in cookies:
             username = cookies["username"]
+            # Проверяем, существует ли пользователь (пароль не проверяем, это рискованно, но удобно)
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
             c.execute("SELECT 1 FROM users WHERE username = ?", (username,))
@@ -675,6 +681,7 @@ def main():
                 st.session_state['username'] = username
                 st.rerun()
             else:
+                # Если пользователя уже нет, удаляем cookie
                 del cookies["username"]
                 cookies.save()
 
@@ -684,7 +691,10 @@ def main():
 
     st.sidebar.markdown(f"**👤 {st.session_state['username']}**")
     if st.sidebar.button("🚪 Выйти"):
-        st.query_params['logout'] = '1'
+        st.session_state['authenticated'] = False
+        if "username" in cookies:
+            del cookies["username"]
+            cookies.save()
         st.rerun()
 
     st.title("💰 Мои финансы")
